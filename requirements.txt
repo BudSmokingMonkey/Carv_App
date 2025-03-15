@@ -1,0 +1,6 @@
+Flask
+flask_jwt_extended
+SQLAlchemy
+PyPDF2
+fpdf
+beautifulsoup4

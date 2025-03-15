@@ -1,0 +1,1132 @@
+<!-- templates/dashboard.html -->
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Car Rental Dashboard (JWT-based)</title>
+  <!-- Bootstrap CSS (CDN) -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <style>
+    body {
+      margin: 1em;
+      font-family: Arial, sans-serif;
+    }
+
+    /* Red accent header */
+    .dashboard-header {
+      color: #fff;
+      background-color: #c0392b;
+      padding: 1em;
+      border-radius: 6px;
+      margin-bottom: 1.5em;
+      text-align: center;
+    }
+
+    .login-section h3 {
+      color: #c0392b;
+      font-weight: bold;
+    }
+
+    .nav-link.active {
+      background-color: #c0392b !important;
+      color: #fff !important;
+      border-radius: 0.25rem;
+    }
+
+    /* Red search/refresh buttons */
+    #search-btn,
+    #refresh-distribution-btn {
+      background-color: #c0392b;
+      color: #fff;
+      border: none;
+    }
+
+    .form-section,
+    .tab-pane {
+      margin-top: 1.5em;
+    }
+
+    #bulk-cars-input {
+      background-color: #fdf2f2; /* slight pinkish tone for emphasis */
+    }
+
+    /* Hide the user management tab by default; we'll show it in JS if user is admin */
+    #usersTabLink {
+      display: none;
+    }
+  </style>
+</head>
+
+<body>
+<div class="container">
+  <!-- Page Header -->
+  <div class="dashboard-header">
+    <h1>Car Rental Dashboard (JWT Auth)</h1>
+    <p class="mb-0">Manage cars, distributions, reservations, user accounts, external APIs, a Gantt by car class, and now email reservations!</p>
+  </div>
+
+  <!-- LOGIN FORM -->
+  <div id="login-section" class="login-section mb-5">
+    <h3>Login</h3>
+    <div class="mb-3">
+      <label for="login-username" class="form-label">Username</label>
+      <input
+        type="text"
+        id="login-username"
+        class="form-control"
+        placeholder="Enter your username"
+      />
+    </div>
+    <div class="mb-3">
+      <label for="login-password" class="form-label">Password</label>
+      <input
+        type="password"
+        id="login-password"
+        class="form-control"
+        placeholder="Enter your password"
+      />
+    </div>
+    <button class="btn btn-danger" onclick="login()">Login</button>
+    <div id="login-message" class="mt-3 text-danger"></div>
+  </div>
+
+  <!-- Once logged in, show TABS -->
+  <ul class="nav nav-tabs" id="mainTabs" style="display:none;">
+    <li class="nav-item">
+      <a class="nav-link active" data-bs-toggle="tab" href="#carsTab">Cars</a>
+    </li>
+    <li class="nav-item">
+      <a class="nav-link" data-bs-toggle="tab" href="#distributionTab">Distribution</a>
+    </li>
+    <li class="nav-item">
+      <a class="nav-link" data-bs-toggle="tab" href="#reservationsTab">Reservations &amp; Prefill PDF</a>
+    </li>
+    <li class="nav-item">
+      <a class="nav-link" data-bs-toggle="tab" href="#bulkCarsTab">Bulk Add Cars</a>
+    </li>
+    <!-- User Management tab, only visible for admins -->
+    <li class="nav-item" id="usersTabLink">
+      <a class="nav-link" data-bs-toggle="tab" href="#usersTab">User Management</a>
+    </li>
+    <!-- API Connections tab -->
+    <li class="nav-item">
+      <a class="nav-link" data-bs-toggle="tab" href="#apisTab">API Connections</a>
+    </li>
+    <!-- Gantt by Car Class -->
+    <li class="nav-item">
+      <a class="nav-link" data-bs-toggle="tab" href="#classGanttTab">Gantt by Class</a>
+    </li>
+    <!-- NEW: Email Reservations tab -->
+    <li class="nav-item">
+      <a class="nav-link" data-bs-toggle="tab" href="#emailResTab">Email Reservations</a>
+    </li>
+  </ul>
+
+  <div class="tab-content">
+    <!-- CARS TAB -->
+    <div class="tab-pane fade show active p-3" id="carsTab">
+      <h2>Cars</h2>
+      <div class="row mb-3">
+        <div class="col-md-3">
+          <label>Status Filter</label>
+          <select id="filter-status" class="form-select">
+            <option value="">(All)</option>
+            <!-- We'll populate with JS -->
+          </select>
+        </div>
+        <div class="col-md-3">
+          <label>Car Group Filter</label>
+          <select id="filter-car-group" class="form-select">
+            <option value="">(All)</option>
+            <!-- We'll populate with JS -->
+          </select>
+        </div>
+        <div class="col-md-3">
+          <label>Search Model</label>
+          <input
+            type="text"
+            id="search-model"
+            class="form-control"
+            placeholder="e.g. Corolla"
+          />
+        </div>
+        <div class="col-md-3 d-flex align-items-end">
+          <button id="search-btn" class="btn w-100" onclick="fetchCars()">Search</button>
+        </div>
+      </div>
+
+      <table class="table table-striped">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Model</th>
+            <th>Car Group</th>
+            <th>Status</th>
+            <th>Plate</th>
+            <th>Rate</th>
+            <th>Location</th>
+            <th>Edit</th>
+          </tr>
+        </thead>
+        <tbody id="car-items"></tbody>
+      </table>
+      <div id="pagination" class="my-2"></div>
+
+      <!-- Add/Update Car Form -->
+      <div class="form-section">
+        <h4>Add/Update Car</h4>
+        <div class="row g-3 mb-3">
+          <div class="col-md-1">
+            <label>ID</label>
+            <input type="number" class="form-control" id="car-id" placeholder="(edit only)">
+          </div>
+          <div class="col-md-2">
+            <label>Model</label>
+            <input type="text" class="form-control" id="model">
+          </div>
+          <div class="col-md-2">
+            <label>Car Group</label>
+            <input type="text" class="form-control" id="car_group" placeholder="e.g. ICAR">
+          </div>
+          <div class="col-md-2">
+            <label>Status</label>
+            <select class="form-select" id="status">
+              <!-- populated by JS -->
+            </select>
+          </div>
+          <div class="col-md-2">
+            <label>Plate</label>
+            <input type="text" class="form-control" id="plate" placeholder="ABC-1234">
+          </div>
+          <div class="col-md-1">
+            <label>Rate</label>
+            <input type="number" step="0.01" class="form-control" id="daily_rate">
+          </div>
+          <div class="col-md-2">
+            <label>Location</label>
+            <input type="text" class="form-control" id="location">
+          </div>
+        </div>
+        <button class="btn btn-success" onclick="submitCarForm()">Add/Update</button>
+        <button class="btn btn-danger" onclick="deleteCar()">Delete</button>
+      </div>
+    </div>
+
+    <!-- DISTRIBUTION TAB -->
+    <div class="tab-pane fade p-3" id="distributionTab">
+      <h2>Car Status Distribution</h2>
+      <button class="btn mb-3" id="refresh-distribution-btn" onclick="refreshDistribution()">
+        Refresh Chart
+      </button>
+      <canvas id="statusChart" width="400" height="200"></canvas>
+    </div>
+
+    <!-- RESERVATIONS TAB -->
+    <div class="tab-pane fade p-3" id="reservationsTab">
+      <h2>Reservations &amp; Returns / Prefill PDF</h2>
+      <button class="btn btn-primary mb-3" onclick="fetchReservationsToday()">Reservations/Returns Today</button>
+
+      <table class="table table-bordered">
+        <thead>
+          <tr>
+            <th>ID</th><th>Customer</th><th>Car ID</th><th>Start</th><th>End</th><th>Status</th><th>PDF</th>
+          </tr>
+        </thead>
+        <tbody id="res-items"></tbody>
+      </table>
+
+      <div class="form-section">
+        <h4>Create Reservation</h4>
+        <div class="row g-3 mb-3">
+          <div class="col-md-3">
+            <label>Customer Name</label>
+            <input type="text" class="form-control" id="res-customer" placeholder="Enter customer name">
+          </div>
+          <div class="col-md-2">
+            <label>Car ID</label>
+            <input type="number" class="form-control" id="res-car-id" placeholder="e.g. 101">
+          </div>
+          <div class="col-md-3">
+            <label>Start Date</label>
+            <input type="date" class="form-control" id="res-start-date">
+          </div>
+          <div class="col-md-3">
+            <label>End Date</label>
+            <input type="date" class="form-control" id="res-end-date">
+          </div>
+          <div class="col-md-1 d-flex align-items-end">
+            <button class="btn btn-success w-100" onclick="createReservation()">Book</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- BULK CARS TAB -->
+    <div class="tab-pane fade p-3" id="bulkCarsTab">
+      <h2>Bulk Add Cars</h2>
+      <p>Enter a JSON array of car objects. Example:</p>
+<pre>
+[
+  {
+    "model": "Toyota Corolla",
+    "car_group": "ICAR",
+    "status": "available",
+    "plate": "ABC-1234",
+    "daily_rate": 99.99,
+    "location": "NYC"
+  },
+  {
+    "model": "Honda Civic",
+    "car_group": "CDAR",
+    "status": "maintenance",
+    "plate": "XYZ-5678"
+  }
+]
+</pre>
+      <textarea class="form-control" id="bulk-cars-input" rows="8"></textarea>
+      <button class="btn btn-success mt-3" onclick="bulkAddCars()">Submit</button>
+      <div id="bulk-message" class="mt-3 text-info"></div>
+    </div>
+
+    <!-- USER MANAGEMENT TAB (Admin Only) -->
+    <div class="tab-pane fade p-3" id="usersTab">
+      <h2>User Management (Admin Only)</h2>
+      <p>Create new users with roles: Admin, Rental Team, Service Team.</p>
+      <form id="user-form">
+        <div class="row g-3">
+          <div class="col-md-3">
+            <label for="new-username" class="form-label">New Username</label>
+            <input type="text" id="new-username" required class="form-control" placeholder="Enter new username">
+          </div>
+          <div class="col-md-3">
+            <label for="new-password" class="form-label">New Password</label>
+            <input type="password" id="new-password" required class="form-control" placeholder="New user password">
+          </div>
+          <div class="col-md-3">
+            <label for="new-role" class="form-label">Role</label>
+            <select id="new-role" class="form-select">
+              <option value="Admin">Admin</option>
+              <option value="Rental Team">Rental Team</option>
+              <option value="Service Team">Service Team</option>
+            </select>
+          </div>
+          <div class="col-md-2 d-flex align-items-end">
+            <button type="submit" class="btn btn-warning w-100">Create User</button>
+          </div>
+        </div>
+      </form>
+      <div id="user-create-result" class="mt-3 text-info"></div>
+    </div>
+
+    <!-- API CONNECTIONS TAB -->
+    <div class="tab-pane fade p-3" id="apisTab">
+      <h2>API Connections</h2>
+      <p>Configure external partner APIs (e.g., RentalCars, SunnyCars, etc.).</p>
+      <form id="api-form" class="row g-3 mb-3">
+        <div class="col-md-3">
+          <label for="partner-name" class="form-label">Partner Name</label>
+          <input type="text" id="partner-name" required class="form-control" placeholder="E.g. SunnyCars" />
+        </div>
+        <div class="col-md-4">
+          <label for="api-base-url" class="form-label">Base URL</label>
+          <input type="text" id="api-base-url" required class="form-control" placeholder="E.g. https://api.sunnycars.com/v1" />
+        </div>
+        <div class="col-md-3">
+          <label for="api-key" class="form-label">API Key</label>
+          <input type="text" id="api-key" required class="form-control" placeholder="Your secret API key" />
+        </div>
+        <div class="col-md-2 d-flex align-items-end">
+          <button type="submit" class="btn btn-success w-100">Add API</button>
+        </div>
+      </form>
+      <div id="api-message" class="text-info mb-3"></div>
+      <h4>Existing Connections</h4>
+      <table class="table table-bordered">
+        <thead>
+          <tr>
+            <th>ID</th><th>Partner Name</th><th>Base URL</th><th>API Key</th>
+          </tr>
+        </thead>
+        <tbody id="api-items">
+        </tbody>
+      </table>
+    </div>
+
+    <!-- GANTT BY CLASS TAB -->
+    <div class="tab-pane fade p-3" id="classGanttTab">
+      <h2>Gantt by Car Class</h2>
+      <p>Visualize open reservations by plate or group on a timeline (placeholder).</p>
+      <button class="btn btn-primary mb-3" onclick="fetchOpenReservationsGantt()">
+        Load Open Reservations
+      </button>
+      <div id="class-gantt-container" style="border:1px solid #ccc; padding:1em; min-height:200px;">
+        <p class="text-secondary">No data loaded yet.</p>
+      </div>
+    </div>
+
+    <!-- NEW EMAIL RESERVATIONS TAB -->
+    <div class="tab-pane fade p-3" id="emailResTab">
+      <h2>Email Reservations</h2>
+      <p>Fetch new reservations from your IMAP inbox, parse them, and optionally generate PDF.</p>
+
+      <!-- Buttons to fetch new reservations and generate PDFs -->
+      <button class="btn btn-primary mb-3" onclick="fetchEmailReservations()">Fetch New Reservations</button>
+      <button class="btn btn-success mb-3 ms-2" onclick="generateEmailResPDF()">Generate PDF of Selected</button>
+      <div id="emailRes-message" class="mt-2 text-info"></div>
+
+      <!-- We'll render a table of newly fetched reservations with checkboxes for PDF selection -->
+      <table class="table table-bordered">
+        <thead>
+          <tr>
+            <th>Select</th>
+            <th>Booking Code</th>
+            <th>Customer Name</th>
+            <th>Start</th>
+            <th>End</th>
+            <th>Car Class</th>
+            <th>Insurance</th>
+            <th>Flight</th>
+          </tr>
+        </thead>
+        <tbody id="emailRes-items"></tbody>
+      </table>
+    </div>
+
+  </div>
+</div>
+
+<!-- Bootstrap JS (for tabs) -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+/* -----------------------------------------------------------------------
+   GLOBALS
+ ------------------------------------------------------------------------*/
+let jwtToken = null;
+let userRole = null;  // We'll store the logged-in user's role
+
+const ALLOWED_STATUSES = ["available", "unavailable", "maintenance", "rented"];
+const ALLOWED_GROUPS = [
+  "EDMR", "EDAR", "CDAR", "CCAR", "DDAR", "DDMR",
+  "ICAR", "ICMR", "XGAD", "MVAR", "GVAR", "IVAR", "IFAR"
+];
+
+/**
+ * parseJwtForRole(token):
+ * If your JWT's payload includes { "role": ... },
+ * we store it in userRole.
+ */
+function parseJwtForRole(token) {
+  try {
+    const payload = token.split('.')[1];
+    const decoded = JSON.parse(atob(payload));
+    userRole = decoded.role || (decoded.sub ? decoded.sub.role : null);
+  } catch (err) {
+    console.warn("JWT parse error:", err);
+  }
+}
+
+/**
+ * authFetch(url, options):
+ * A wrapper around fetch that attaches the JWT to
+ * the Authorization header if we have it.
+ */
+function authFetch(url, options={}) {
+  if (!options.headers) {
+    options.headers = {};
+  }
+  if (jwtToken) {
+    options.headers['Authorization'] = 'Bearer ' + jwtToken;
+  }
+  return fetch(url, options);
+}
+
+/* -----------------------------------------------------------------------
+   LOGIN
+ ------------------------------------------------------------------------*/
+async function login() {
+  const username = document.getElementById('login-username').value.trim();
+  const password = document.getElementById('login-password').value.trim();
+
+  if (!username || !password) {
+    document.getElementById('login-message').textContent = 'Please fill out both fields.';
+    return;
+  }
+
+  try {
+    const response = await fetch('/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password })
+    });
+    const body = await response.json();
+
+    if (response.ok && body.access_token) {
+      document.getElementById('login-message').textContent = 'Login success!';
+      // Hide login form, show the main tabs
+      document.getElementById('login-section').style.display = 'none';
+      document.getElementById('mainTabs').style.display = 'flex';
+
+      // Store JWT
+      jwtToken = body.access_token;
+      parseJwtForRole(jwtToken);
+
+      // If Admin, show the User Management tab
+      if (userRole === 'Admin') {
+        document.getElementById('usersTabLink').style.display = 'block';
+      }
+
+      // Optionally load the car list to start
+      fetchCars();
+
+    } else {
+      document.getElementById('login-message').textContent = body.error || 'Login error';
+    }
+  } catch (err) {
+    document.getElementById('login-message').textContent = 'Network error: ' + err;
+  }
+}
+
+/* -----------------------------------------------------------------------
+   ONLOAD: populate dropdowns
+ ------------------------------------------------------------------------*/
+window.onload = () => {
+  populateDropdown(document.getElementById('status'), ALLOWED_STATUSES);
+  populateDropdown(document.getElementById('filter-status'), ALLOWED_STATUSES, "(All)");
+  populateDropdown(document.getElementById('filter-car-group'), ALLOWED_GROUPS, "(All)");
+};
+
+/**
+ * populateDropdown(selectElement, itemsArray, placeholder=""):
+ * Fills a <select> with the given items. 
+ */
+function populateDropdown(selectElement, itemsArray, placeholder="") {
+  selectElement.innerHTML = "";
+  if (placeholder) {
+    const opt = document.createElement('option');
+    opt.value = "";
+    opt.textContent = placeholder;
+    selectElement.appendChild(opt);
+  }
+  itemsArray.forEach(item => {
+    const option = document.createElement('option');
+    option.value = item;
+    option.textContent = item;
+    selectElement.appendChild(option);
+  });
+}
+
+/* -----------------------------------------------------------------------
+   CARS: fetchCars(), submitCarForm(), etc.
+ ------------------------------------------------------------------------*/
+let currentCarPage = 1;
+let carsPerPage = 5;
+
+async function fetchCars(page=1) {
+  currentCarPage = page;
+
+  // Collect filters
+  const statusVal = document.getElementById('filter-status').value;
+  const groupVal = document.getElementById('filter-car-group').value;
+  const modelVal = document.getElementById('search-model').value.trim();
+
+  const params = new URLSearchParams();
+  params.append("page", currentCarPage);
+  params.append("per_page", carsPerPage);
+  if (statusVal) params.append("status", statusVal);
+  if (groupVal) params.append("car_group", groupVal);
+  if (modelVal) params.append("search", modelVal);
+
+  try {
+    const response = await authFetch('/api/v1/cars?' + params.toString());
+    const data = await response.json();
+
+    if (response.ok) {
+      renderCarTable(data.cars);
+      renderCarPagination(data);
+    } else {
+      alert('Error fetching cars: ' + JSON.stringify(data));
+    }
+  } catch (err) {
+    alert('Fetch error: ' + err);
+  }
+}
+
+function renderCarTable(cars) {
+  const tbody = document.getElementById('car-items');
+  tbody.innerHTML = "";
+
+  cars.forEach(car => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${car.id}</td>
+      <td>${car.model}</td>
+      <td>${car.car_group}</td>
+      <td>${car.status}</td>
+      <td>${car.plate || ''}</td>
+      <td>${car.daily_rate || ''}</td>
+      <td>${car.location || ''}</td>
+      <td>
+        <button class="btn btn-sm btn-warning"
+          onclick="prefillCarForm(${car.id}, '${car.model}', '${car.car_group}', '${car.status}', '${car.plate}', ${car.daily_rate}, '${car.location}')">
+          Edit
+        </button>
+      </td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+function renderCarPagination(data) {
+  const paginationDiv = document.getElementById('pagination');
+  paginationDiv.innerHTML = "";
+
+  const { page, pages } = data;
+  if (pages <= 1) return;
+
+  if (page > 1) {
+    const btnPrev = document.createElement('button');
+    btnPrev.className = 'btn btn-secondary btn-sm me-2';
+    btnPrev.textContent = 'Previous';
+    btnPrev.onclick = () => fetchCars(page - 1);
+    paginationDiv.appendChild(btnPrev);
+  }
+
+  if (page < pages) {
+    const btnNext = document.createElement('button');
+    btnNext.className = 'btn btn-secondary btn-sm';
+    btnNext.textContent = 'Next';
+    btnNext.onclick = () => fetchCars(page + 1);
+    paginationDiv.appendChild(btnNext);
+  }
+}
+
+function prefillCarForm(id, model, carGroup, status, plateVal, rate, loc) {
+  document.getElementById('car-id').value = id;
+  document.getElementById('model').value = model;
+  document.getElementById('car_group').value = carGroup;
+  document.getElementById('status').value = status;
+  document.getElementById('plate').value = (plateVal && plateVal !== "null") ? plateVal : "";
+  document.getElementById('daily_rate').value = (rate && rate !== "null") ? rate : "";
+  document.getElementById('location').value = (loc && loc !== "null") ? loc : "";
+}
+
+async function submitCarForm() {
+  const carId = document.getElementById('car-id').value.trim();
+  const modelVal = document.getElementById('model').value.trim();
+  const groupVal = document.getElementById('car_group').value.trim();
+  const statusVal = document.getElementById('status').value;
+  const plateVal = document.getElementById('plate').value.trim();
+  const rateVal = document.getElementById('daily_rate').value.trim();
+  const locVal = document.getElementById('location').value.trim();
+
+  const payload = {
+    model: modelVal || null,
+    car_group: groupVal || null,
+    status: statusVal || null,
+    plate: plateVal || null,
+    daily_rate: rateVal ? parseFloat(rateVal) : null,
+    location: locVal || null
+  };
+
+  let url = '/api/v1/cars';
+  let method = 'POST';
+  if (carId) {
+    url += '/' + carId;
+    method = 'PATCH';
+  }
+
+  try {
+    const response = await authFetch(url, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await response.json();
+    if (response.ok) {
+      alert(data.message || 'Success!');
+      fetchCars();
+      clearCarForm();
+    } else {
+      alert('Error: ' + JSON.stringify(data));
+    }
+  } catch (err) {
+    alert('Fetch error: ' + err);
+  }
+}
+
+function clearCarForm() {
+  document.getElementById('car-id').value = '';
+  document.getElementById('model').value = '';
+  document.getElementById('car_group').value = '';
+  document.getElementById('status').value = '';
+  document.getElementById('plate').value = '';
+  document.getElementById('daily_rate').value = '';
+  document.getElementById('location').value = '';
+}
+
+async function deleteCar() {
+  const carId = document.getElementById('car-id').value.trim();
+  if (!carId) {
+    alert("Please enter a Car ID to delete.");
+    return;
+  }
+  if (!confirm("Are you sure you want to delete this car?")) return;
+
+  try {
+    const response = await authFetch(`/api/v1/cars/${carId}`, { method: 'DELETE' });
+    const data = await response.json();
+    if (response.ok) {
+      alert(data.message);
+      fetchCars();
+      clearCarForm();
+    } else {
+      alert('Error: ' + JSON.stringify(data));
+    }
+  } catch (err) {
+    alert('Fetch error: ' + err);
+  }
+}
+
+/* -----------------------------------------------------------------------
+   DISTRIBUTION
+ ------------------------------------------------------------------------*/
+let myStatusChart = null;
+
+async function refreshDistribution() {
+  const params = new URLSearchParams();
+  params.append("per_page", 9999);
+
+  try {
+    const response = await authFetch('/api/v1/cars?' + params.toString());
+    const data = await response.json();
+    if (response.ok) {
+      buildDistributionChart(data.cars);
+    } else {
+      alert('Error fetching distribution data: ' + JSON.stringify(data));
+    }
+  } catch (err) {
+    alert('Distribution fetch error: ' + err);
+  }
+}
+
+function buildDistributionChart(cars) {
+  if (!cars) return;
+  const statusCounts = {};
+  cars.forEach(car => {
+    const st = car.status || 'unknown';
+    if (!statusCounts[st]) statusCounts[st] = 0;
+    statusCounts[st]++;
+  });
+  const labels = Object.keys(statusCounts);
+  const counts = Object.values(statusCounts);
+
+  const ctx = document.getElementById('statusChart').getContext('2d');
+  if (myStatusChart) {
+    myStatusChart.destroy();
+  }
+  myStatusChart = new Chart(ctx, {
+    type: 'pie',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Car Status Distribution',
+        data: counts
+      }]
+    }
+  });
+}
+
+/* -----------------------------------------------------------------------
+   RESERVATIONS & PDF
+ ------------------------------------------------------------------------*/
+async function fetchReservationsToday() {
+  try {
+    const response = await authFetch('/api/v1/reservations?date_filter=today');
+    const data = await response.json();
+    if (response.ok) {
+      renderReservations(data);
+    } else {
+      alert('Error fetching reservations: ' + JSON.stringify(data));
+    }
+  } catch (err) {
+    alert('Fetch error: ' + err);
+  }
+}
+
+function renderReservations(resList) {
+  const tbody = document.getElementById('res-items');
+  tbody.innerHTML = "";
+  resList.forEach(r => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${r.id}</td>
+      <td>${r.customer_name}</td>
+      <td>${r.car_id}</td>
+      <td>${r.start_date}</td>
+      <td>${r.end_date}</td>
+      <td>${r.status}</td>
+      <td><button class="btn btn-sm btn-success" onclick="prefillPdf(${r.id})">PDF</button></td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+async function createReservation() {
+  const customer = document.getElementById('res-customer').value.trim();
+  const carId = document.getElementById('res-car-id').value.trim();
+  const startDate = document.getElementById('res-start-date').value.trim();
+  const endDate = document.getElementById('res-end-date').value.trim();
+
+  if (!customer || !carId || !startDate || !endDate) {
+    alert("All fields required.");
+    return;
+  }
+
+  const payload = {
+    customer_name: customer,
+    car_id: parseInt(carId),
+    start_date: startDate,
+    end_date: endDate
+  };
+
+  try {
+    const response = await authFetch('/api/v1/reservations', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await response.json();
+    if (response.ok) {
+      alert(data.message);
+      fetchReservationsToday();
+    } else {
+      alert('Error creating reservation: ' + JSON.stringify(data));
+    }
+  } catch (err) {
+    alert('Fetch error: ' + err);
+  }
+}
+
+async function prefillPdf(resId) {
+  try {
+    const response = await authFetch(`/api/v1/reservations/${resId}/pdf`);
+    if (response.ok) {
+      const blob = await response.blob();
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `reservation_${resId}.pdf`;
+      link.click();
+    } else {
+      const errData = await response.json();
+      alert('Error generating PDF: ' + JSON.stringify(errData));
+    }
+  } catch (err) {
+    alert('PDF fetch error: ' + err);
+  }
+}
+
+/* -----------------------------------------------------------------------
+   BULK ADD CARS
+ ------------------------------------------------------------------------*/
+async function bulkAddCars() {
+  const txt = document.getElementById('bulk-cars-input').value.trim();
+  let arr;
+  try {
+    arr = JSON.parse(txt);
+  } catch (e) {
+    alert("Invalid JSON input.");
+    return;
+  }
+
+  try {
+    const response = await authFetch('/api/v1/cars/bulk', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(arr)
+    });
+    const data = await response.json();
+    if (response.ok) {
+      alert(data.message);
+      fetchCars();
+    } else {
+      alert('Bulk add error: ' + JSON.stringify(data));
+    }
+  } catch (err) {
+    alert('Bulk add fetch error: ' + err);
+  }
+}
+
+/* -----------------------------------------------------------------------
+   USER MANAGEMENT
+ ------------------------------------------------------------------------*/
+const userForm = document.getElementById('user-form');
+if (userForm) {
+  userForm.addEventListener('submit', async (evt) => {
+    evt.preventDefault();
+    const username = document.getElementById('new-username').value.trim();
+    const password = document.getElementById('new-password').value.trim();
+    const role = document.getElementById('new-role').value;
+
+    if (!username || !password) {
+      alert("Please fill all fields.");
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append("username", username);
+    formData.append("password", password);
+    formData.append("role", role);
+
+    try {
+      const response = await authFetch("/admin/users", {
+        method: "POST",
+        body: formData
+      });
+      const data = await response.json();
+      if (response.ok) {
+        document.getElementById('user-create-result').innerText = JSON.stringify(data);
+        userForm.reset();
+      } else {
+        document.getElementById('user-create-result').innerText = JSON.stringify(data);
+      }
+    } catch (err) {
+      alert('User creation error: ' + err);
+    }
+  });
+}
+
+/* -----------------------------------------------------------------------
+   API CONNECTIONS
+ ------------------------------------------------------------------------*/
+const apiForm = document.getElementById('api-form');
+if (apiForm) {
+  apiForm.addEventListener('submit', async (evt) => {
+    evt.preventDefault();
+    const partnerName = document.getElementById('partner-name').value.trim();
+    const baseUrl = document.getElementById('api-base-url').value.trim();
+    const apiKey = document.getElementById('api-key').value.trim();
+
+    if (!partnerName || !baseUrl || !apiKey) {
+      alert("All fields required for API connection.");
+      return;
+    }
+
+    try {
+      const response = await authFetch("/api/v1/apis", {
+        method: "POST",
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          partner_name: partnerName,
+          base_url: baseUrl,
+          api_key: apiKey
+        })
+      });
+      const data = await response.json();
+      if (response.ok) {
+        document.getElementById('api-message').textContent = data.message;
+        addApiConnectionRow({ id: Date.now(), ...data.data });
+        apiForm.reset();
+      } else {
+        document.getElementById('api-message').textContent = 'Error: ' + JSON.stringify(data);
+      }
+    } catch (err) {
+      alert('API connection error: ' + err);
+    }
+  });
+}
+
+function addApiConnectionRow(connection) {
+  const tbody = document.getElementById('api-items');
+  const tr = document.createElement('tr');
+  tr.innerHTML = `
+    <td>${connection.id}</td>
+    <td>${connection.partner_name || ''}</td>
+    <td>${connection.base_url || ''}</td>
+    <td>${connection.api_key || ''}</td>
+  `;
+  tbody.appendChild(tr);
+}
+
+/* -----------------------------------------------------------------------
+   GANTT by Car Class (NEW)
+ ------------------------------------------------------------------------*/
+function fetchOpenReservationsGantt() {
+  // Possibly /api/v1/reservations?status=open or something similar
+  authFetch('/api/v1/reservations?status=open')
+    .then(r => r.json().then(data => ({ status: r.status, body: data })))
+    .then(({ status, body }) => {
+      if (status === 200) {
+        buildClassGantt(body);
+      } else {
+        alert('Error fetching open reservations: ' + JSON.stringify(body));
+      }
+    })
+    .catch(err => alert('Fetch error (open reservations): ' + err));
+}
+
+function buildClassGantt(reservations) {
+  const container = document.getElementById('class-gantt-container');
+  container.innerHTML = "";
+
+  if (!reservations || reservations.length === 0) {
+    container.innerHTML = "<p>No open reservations found.</p>";
+    return;
+  }
+
+  // Group by plate or car_group, depending on how you want to define "class"
+  // We'll group by 'plate' as an example
+  const grouped = {};
+  reservations.forEach(res => {
+    const groupKey = res.plate || "Unknown";
+    if (!grouped[groupKey]) grouped[groupKey] = [];
+    grouped[groupKey].push(res);
+  });
+
+  Object.keys(grouped).forEach(g => {
+    const title = document.createElement('h5');
+    title.textContent = "Plate: " + g;
+    container.appendChild(title);
+
+    const table = document.createElement('table');
+    table.className = 'table table-sm table-bordered mb-3';
+    const thead = document.createElement('thead');
+    thead.innerHTML = "<tr><th>Res ID</th><th>Customer</th><th>Start</th><th>End</th></tr>";
+    table.appendChild(thead);
+    const tbody = document.createElement('tbody');
+
+    grouped[g].forEach(res => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${res.id}</td>
+        <td>${res.customer_name}</td>
+        <td>${res.start_date}</td>
+        <td>${res.end_date}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    container.appendChild(table);
+  });
+}
+
+/* -----------------------------------------------------------------------
+   EMAIL RESERVATIONS TAB
+ ------------------------------------------------------------------------*/
+
+/**
+ * 1) fetchEmailReservations:
+ *    - Calls an endpoint (e.g. /api/v1/email_reservations/fetch) that:
+ *      (a) runs your IMAP fetch code to find new emails
+ *      (b) parses them, returns a JSON array of reservations.
+ */
+async function fetchEmailReservations() {
+  document.getElementById('emailRes-message').textContent = "Fetching from server...";
+  try {
+    const response = await authFetch("/api/v1/email_reservations/fetch", {
+      method: "POST", // or GET, depending on how you set it up
+      headers: { "Content-Type": "application/json" }
+    });
+    const data = await response.json();
+    if (response.ok) {
+      // data is presumably: { reservations: [...] }
+      document.getElementById('emailRes-message').textContent = "Reservations fetched!";
+      renderEmailReservations(data.reservations);
+    } else {
+      document.getElementById('emailRes-message').textContent =
+        "Error: " + JSON.stringify(data);
+    }
+  } catch (err) {
+    document.getElementById('emailRes-message').textContent =
+      "Network/Server error: " + err;
+  }
+}
+
+/**
+ * 2) renderEmailReservations:
+ *    - Display the new reservations in a table with checkboxes
+ */
+function renderEmailReservations(resList) {
+  const tbody = document.getElementById('emailRes-items');
+  tbody.innerHTML = "";
+  if (!resList || resList.length === 0) {
+    document.getElementById('emailRes-message').textContent = "No new reservations found.";
+    return;
+  }
+
+  resList.forEach((r, idx) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><input type="checkbox" class="emailRes-checkbox" value="${idx}"></td>
+      <td>${r["Booking Code"]}</td>
+      <td>${r["Customer Name"]}</td>
+      <td>${r["Start Date & Time"]}</td>
+      <td>${r["End Date & Time"]}</td>
+      <td>${r["Car Class"]}</td>
+      <td>${r["Insurance"]}</td>
+      <td>${r["Flight Number"]}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+/**
+ * 3) generateEmailResPDF:
+ *    - Collect the selected reservations (by checkbox),
+ *      send them to the server, which calls your PDF generator logic,
+ *      and returns a PDF blob for download.
+ */
+async function generateEmailResPDF() {
+  // Gather selected indices
+  const checkboxes = document.querySelectorAll(".emailRes-checkbox:checked");
+  if (!checkboxes.length) {
+    alert("No reservations selected.");
+    return;
+  }
+
+  // Build an array of selected reservations from the table
+  const rows = document.querySelectorAll("#emailRes-items tr");
+  const selectedRes = [];
+  checkboxes.forEach(chk => {
+    const idx = parseInt(chk.value);
+    // We'll read from the row or store them if we had them in memory
+    // For simplicity here, let's read from the DOM cells:
+    const tds = rows[idx].querySelectorAll("td");
+    // Remember: 0 => checkbox, then 1 => Booking Code, 2 => Customer Name, etc.
+    selectedRes.push({
+      "Booking Code": tds[1].textContent,
+      "Customer Name": tds[2].textContent,
+      "Start Date & Time": tds[3].textContent,
+      "End Date & Time": tds[4].textContent,
+      "Car Class": tds[5].textContent,
+      "Insurance": tds[6].textContent,
+      "Flight Number": tds[7].textContent
+    });
+  });
+
+  // Send to server
+  try {
+    const response = await authFetch("/api/v1/email_reservations/pdf", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reservations: selectedRes })
+    });
+    if (response.ok) {
+      // Expecting a PDF blob
+      const blob = await response.blob();
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = "new_email_reservations.pdf";
+      link.click();
+    } else {
+      const errData = await response.json();
+      alert("Error generating PDF: " + JSON.stringify(errData));
+    }
+  } catch (err) {
+    alert("Network/Server error: " + err);
+  }
+}
+</script>
+</body>
+</html>
